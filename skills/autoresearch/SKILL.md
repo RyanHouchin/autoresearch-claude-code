@@ -9,10 +9,28 @@ Autonomous experiment loop: try ideas, keep what works, discard what doesn't, ne
 
 ## Setup
 
+### Fit check (BLOCKING — answer before writing anything)
+
+Refuse to start and propose a better-shaped target if any MUST-HAVE fails:
+- (a) **Objective number?** The metric is a real number printed by a command, not "looks better".
+- (b) **Fast loop?** Results in seconds/minutes, not weeks (no SEO reindex, no email churn).
+- (c) **Can you edit the asset?** It's a file/API you control, not a published artifact.
+- (d) **At least ONE independent tripwire** that auto-fails the most obvious cheat — AND if
+  the metric is a PROXY for something you can't measure directly, a mandatory human
+  visual/spot check before any "win" is trusted.
+
+NICE-TO-HAVES (more = stronger; escalate caution with run length): high feedback
+volume/diversity, cheap-to-fail, a consistent/repeatable measuring stick, a held-out set.
+
+### Steps
+
 1. Ask (or infer): **Goal**, **Command**, **Metric** (+ direction), **Files in scope**, **Constraints**.
+1b. **PRECONDITION: the working tree must be committed before looping** (`git status` clean).
+    The discard path reverts to HEAD and removes only files an experiment creates, so any
+    uncommitted work would be lost. Commit or stash first, or refuse to start.
 2. `git checkout -b autoresearch/<goal>-<date>`
 3. Read the source files. Understand the workload deeply before writing anything.
-4. `mkdir -p experiments` then write `autoresearch.md`, `autoresearch.sh`, and `experiments/worklog.md` (see below). Commit all three.
+4. `mkdir -p experiments` then write `autoresearch.md`, `autoresearch.sh`, and `experiments/worklog.md` (see below). Commit `autoresearch.sh` only. Add the loop-state files (`autoresearch.md`, `autoresearch.jsonl`, `autoresearch-dashboard.md`, `autoresearch.ideas.md`, `experiments/worklog.md`, `.autoresearch-off`) to `.gitignore` — do NOT commit them, or a synced repo can re-arm the loop elsewhere.
 5. Initialize experiment (write config header to `autoresearch.jsonl`) → run baseline → log result → start looping immediately.
 
 ### `autoresearch.md`
@@ -154,11 +172,21 @@ git rev-parse --short=7 HEAD
 
 **If discard or crash:**
 ```bash
-git checkout -- .
-git clean -fd
+# Revert tracked edits from this experiment back to HEAD:
+git restore --source=HEAD --staged --worktree -- .
+# Then remove ONLY files THIS experiment created (track what you created), e.g.:
+#   rm -f relative/path/to/a-file-this-experiment-added
 ```
 
-> **Warning:** Never use `git clean -fdx` — the `-x` flag deletes gitignored files including JSONL state, dashboards, and experiment artifacts.
+> **DANGER — never run a blanket `git clean` to discard.** `git clean -fd` deletes
+> EVERY untracked file in the tree (the user's uncommitted source, the eval harness,
+> the scorer itself), and `-fdx` additionally wipes gitignored loop state. A discard
+> must revert tracked edits and delete only the specific file(s) this one experiment
+> added — never a directory-wide clean.
+>
+> **PRECONDITION (enforced by the setup fit-check):** the repo's working tree must be
+> fully committed before the loop starts, so `git restore` reverts cleanly and the only
+> untracked files at discard time are ones this experiment just created.
 
 Use the current HEAD hash (before revert) as the commit field.
 
@@ -231,7 +259,18 @@ Include delta percentages vs baseline for each metric value. Show ALL runs in th
 - **Think longer when stuck.** Re-read source files, study the profiling data, reason about what the CPU is actually doing. The best ideas come from deep understanding, not from trying random variations.
 - **Resuming:** if `autoresearch.md` exists, read it + `autoresearch.jsonl` + `experiments/worklog.md` + git log, continue looping. The worklog has the full narrative and insights.
 
-**NEVER STOP.** The user may be away for hours. Keep going until interrupted.
+- **Never touch the scorer or the metric.** Do NOT edit and do NOT read the scoring
+  file / verifier source during a run — agents that can merely *see* a verifier learn to
+  reverse-engineer it. Your working set is the in-scope asset files, full stop. Never
+  change the metric definition, weights, or test data to move the number.
+- **Per-instance floor.** If the metric aggregates over cases, a kept change must not
+  regress ANY individual case below its archived best, even if the aggregate rose.
+- **Stop budget.** Stop and summarize at a sane cap: ~50 runs OR 6h wall-clock, OR after
+  5 consecutive non-improving runs, OR after 3 consecutive crashes. A broken env (missing
+  dep, OOM) otherwise loops on metric=0 discards forever.
+- **Kill switch:** the user can stop you any time with `touch .autoresearch-off`.
+
+**NEVER STOP** within the budget above — never ask "should I continue?"; keep going until interrupted or a stop condition is hit.
 
 ## Ideas Backlog
 
